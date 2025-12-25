@@ -1,0 +1,22 @@
+{
+  "name": "dslr-photo-copier-tool",
+  "productName": "DSLR Photo Copier Tool",
+  "version": "0.1.0",
+  "packageManager": "pnpm@8",
+  "description": "Electron starter app to copy photos from DSLR memory cards",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "keywords": ["electron","dslr","photos","copy"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^26.0.0"
+  }
+  ,
+  "dependencies": {
+    "csv-parse": "^5.3.6"
+  }
+}

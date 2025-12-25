@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'">
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>DSLR Photo Copier Tool</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>📷 DSLR Photo Copier Tool</h1>
+        <p class="subtitle">Efficiently copy selected photos from mapped folders</p>
+      </div>
+      
+      <div class="card">
+        <h2 class="card-title">1. Select CSV File</h2>
+        <div class="control-group">
+          <div class="input-row">
+            <label>CSV File:</label>
+            <input type="text" id="csvPath" placeholder="No file selected" readonly class="input-readonly">
+            <button id="btnCsv" class="btn btn-primary">Upload CSV</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">2. Map Folders & Scan</h2>
+        <div id="mapping" class="mapping-container"></div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">3. Set Destination & Copy</h2>
+        <div class="control-group">
+          <div class="input-row">
+            <label>Destination Folder:</label>
+            <input type="text" id="destFolder" placeholder="No folder selected" readonly class="input-readonly">
+            <button id="btnDestFolder" class="btn btn-secondary">Choose</button>
+            <button id="btnCopyPhotos" class="btn btn-success">Copy Photos</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="summary" class="summary-box">Ready to scan.</div>
+      <progress id="progress" value="0" max="100" class="progress-bar"></progress>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>
