@@ -123,29 +123,14 @@ function processSelection(payload, progressCb) {
       })
     }
 
-    // streaming second pass: create batches and dispatch
+    // streaming second pass: create jobs grouped by folder, then process folder by folder
     await new Promise((resolve, reject) => {
       const rs = fs.createReadStream(csvPath)
       const parser = parse({ columns: true, relax_quotes: true, skip_empty_lines: true })
       rs.pipe(parser)
-      let batch = []
       let skippedRows = 0
       const pendingScans = []
-
-      function dispatchBatch(b) {
-        totalJobs += b.length
-        const tryDispatch = () => {
-          if (idle.length === 0) {
-            // wait and retry
-            setTimeout(tryDispatch, 50)
-            return
-          }
-          const workerIndex = idle.shift()
-          const w = workers[workerIndex]
-          w.postMessage({ jobs: b, options: opts })
-        }
-        tryDispatch()
-      }
+      const jobsByFolder = {} // { folderName: [job, ...] }
 
       parser.on('readable', () => {
         let rec
@@ -153,19 +138,13 @@ function processSelection(payload, progressCb) {
           const folderName = rec.FolderName || rec.folder_name || rec.folderName || ''
           const imageName = rec.fileName || rec.file_name || rec.file || rec.fileName || ''
           if (!folderName || !imageName) continue
-          // only create jobs for folders the user has mapped
-              if (!folderMap[folderName]) {
+          if (!folderMap[folderName]) {
             skippedRows++
             continue
           }
-
-          // initialize per-folder lists
           perFolder[folderName] = perFolder[folderName] || { matched: [], missing: [], copied: 0, failed: 0 }
-
           const srcDir = folderMap[folderName]
           const destDir = getOutputDir(folderName)
-
-
 
           if (opts.mode === 'scan') {
             // in scan mode, perform async existence check and record
@@ -178,109 +157,115 @@ function processSelection(payload, progressCb) {
                 perFolder[folderName].missing.push(imageName)
               }
               totalJobs++
-              // emit progress after every file in scan mode
               if (progressCb) progressCb({ type: 'progress', totalJobs, perFolder })
             })()
             pendingScans.push(p)
           } else {
-              // prepare list of filenames to copy: include RAW variants if requested
-              const rawExts = ['.cr2', '.nef', '.arw', '.rw2', '.dng', '.raw', '.raf']
-              const baseName = path.parse(imageName).name
-              const namesToCopy = [imageName]
-              if (opts.includeRaw) {
-                for (const re of rawExts) {
-                  const cand = baseName + re
-                  try {
-                    if (fs.existsSync(path.join(srcDir, cand))) namesToCopy.push(cand)
-                  } catch (e) {}
-                }
-              }
-
-              // ensure prompt state fields
-              if (typeof opts._overwriteAll === 'undefined') opts._overwriteAll = false
-              if (typeof opts._skipAll === 'undefined') opts._skipAll = false
-
-              // For each candidate name, handle existing dest collisions (synchronously)
-              for (const nameToCopy of namesToCopy) {
+            // prepare list of filenames to copy: include RAW variants if requested
+            const rawExts = ['.cr2', '.nef', '.arw', '.rw2', '.dng', '.raw', '.raf']
+            const baseName = path.parse(imageName).name
+            const namesToCopy = [imageName]
+            if (opts.includeRaw) {
+              for (const re of rawExts) {
+                const cand = baseName + re
                 try {
-                  const destPath = path.join(destDir, nameToCopy)
-                  const existsSync = fs.existsSync(destPath)
-                  if (existsSync && opts.collision === 'prompt') {
-                    if (opts._skipAll) {
-                      skippedRows++
-                      continue
-                    }
-                    if (!opts._overwriteAll) {
-                      const choice = dialog.showMessageBoxSync({
-                        type: 'question',
-                        buttons: ['Overwrite','Skip','Overwrite All','Skip All','Cancel'],
-                        defaultId: 0,
-                        cancelId: 4,
-                        title: 'File exists',
-                        message: `File already exists in destination:\n${destPath}\nWhat would you like to do?`,
-                        noLink: true
-                      })
-                      if (choice === 4) {
-                        if (progressCb) progressCb({ type: 'error', error: 'Operation cancelled by user' })
-                        throw new Error('Operation cancelled by user')
-                      } else if (choice === 1) {
-                        skippedRows++
-                        continue
-                      } else if (choice === 2) {
-                        opts._overwriteAll = true
-                        batch.push({ folderName, imageName: nameToCopy, srcDir, destDir, options: opts, overwrite: true })
-                        if (batch.length >= opts.batchSize) { const b = batch; batch = []; dispatchBatch(b) }
-                        continue
-                      } else if (choice === 3) {
-                        opts._skipAll = true
-                        skippedRows++
-                        continue
-                      } else if (choice === 0) {
-                        batch.push({ folderName, imageName: nameToCopy, srcDir, destDir, options: opts, overwrite: true })
-                        if (batch.length >= opts.batchSize) { const b = batch; batch = []; dispatchBatch(b) }
-                        continue
-                      }
-                    } else {
-                      // overwriteAll true
-                      batch.push({ folderName, imageName: nameToCopy, srcDir, destDir, options: opts, overwrite: true })
-                      if (batch.length >= opts.batchSize) { const b = batch; batch = []; dispatchBatch(b) }
-                      continue
-                    }
-                  }
-                  // no existing dest or collision not prompt => queue normally
-                  batch.push({ folderName, imageName: nameToCopy, srcDir, destDir, options: opts })
-                  if (batch.length >= opts.batchSize) { const b = batch; batch = []; dispatchBatch(b) }
-                } catch (err) {
-                  if (progressCb) progressCb({ type: 'error', error: err.message })
-                  throw err
-                }
+                  if (fs.existsSync(path.join(srcDir, cand))) namesToCopy.push(cand)
+                } catch (e) {}
               }
-            if (batch.length >= opts.batchSize) {
-              const b = batch
-              batch = []
-              dispatchBatch(b)
+            }
+            if (!jobsByFolder[folderName]) jobsByFolder[folderName] = []
+            for (const nameToCopy of namesToCopy) {
+              jobsByFolder[folderName].push({ folderName, imageName: nameToCopy, srcDir, destDir, options: opts })
             }
           }
         }
       })
 
       parser.on('end', async () => {
-        console.log('[Processor] CSV parsing ended, mode:', opts.mode, 'totalJobs:', totalJobs)
         if (opts.mode === 'scan') {
-          // emit initial scan progress before waiting
           if (progressCb) progressCb({ type: 'progress', totalJobs, perFolder })
-          // wait for all existence checks
           await Promise.all(pendingScans)
-          console.log('[Processor] Scan complete, sending done')
           if (progressCb) progressCb({ type: 'done', totalJobs, completed: 0, failed: 0, perFolder, skipped: skippedRows })
           resolve()
           return
         }
-        if (batch.length > 0) dispatchBatch(batch)
+
+        // --- RESTORE LINE-BY-LINE (CSV ORDER) BATCH LOGIC ---
+        let allJobs = []
+        // flatten jobsByFolder into CSV order
+        for (const folderName of Object.keys(jobsByFolder)) {
+          for (const job of jobsByFolder[folderName]) {
+            allJobs.push(job)
+          }
+        }
+        totalJobs = allJobs.length
+        console.log(`[Processor] Total jobs found in CSV after filtering: ${totalJobs}`)
+        if (progressCb) progressCb({ type: 'progress', totalJobs, perFolder })
+
+        // Process jobs in batches of opts.batchSize
+        let dispatchedJobs = 0
+        let cancelled = false
+        for (let i = 0; i < allJobs.length && !cancelled; i += opts.batchSize) {
+          const batchJobs = allJobs.slice(i, i + opts.batchSize)
+          const batch = []
+          for (const job of batchJobs) {
+            // handle collision prompt logic synchronously per job
+            const destPath = path.join(job.destDir, job.imageName)
+            let overwrite = false
+            if (fs.existsSync(destPath) && opts.collision === 'prompt') {
+              if (opts._skipAll) {
+                skippedRows++
+                continue
+              }
+              if (!opts._overwriteAll) {
+                const choice = dialog.showMessageBoxSync({
+                  type: 'question',
+                  buttons: ['Overwrite','Skip','Overwrite All','Skip All','Cancel'],
+                  defaultId: 0,
+                  cancelId: 4,
+                  title: 'File exists',
+                  message: `File already exists in destination:\n${destPath}\nWhat would you like to do?`,
+                  noLink: true
+                })
+                if (choice === 4) {
+                  if (progressCb) progressCb({ type: 'error', error: 'Operation cancelled by user' })
+                  cancelled = true
+                  break
+                } else if (choice === 1) {
+                  skippedRows++
+                  continue
+                } else if (choice === 2) {
+                  opts._overwriteAll = true
+                  overwrite = true
+                } else if (choice === 3) {
+                  opts._skipAll = true
+                  skippedRows++
+                  continue
+                } else if (choice === 0) {
+                  overwrite = true
+                }
+              } else {
+                overwrite = true
+              }
+            }
+            batch.push({ ...job, overwrite })
+          }
+          if (cancelled) break;
+          if (batch.length > 0) {
+            dispatchedJobs += batch.length
+            console.log(`[Processor] Dispatching batch of ${batch.length} jobs (dispatched so far: ${dispatchedJobs})`)
+            await dispatchBatchAndWait(batch, workers, idle, opts)
+          }
+        }
+        console.log(`[Processor] All jobs dispatched. Total dispatched: ${dispatchedJobs}`)
+        if (cancelled) {
+          resolve()
+          return
+        }
+
         // wait for workers to finish their work
         const checkDone = () => {
           if (completed + failed >= totalJobs) {
-            // cleanup workers
             for (const w of workers) w.terminate()
             if (progressCb) progressCb({ type: 'done', totalJobs, completed, failed, perFolder })
             resolve()
@@ -299,6 +284,30 @@ function processSelection(payload, progressCb) {
       parser.on('error', reject)
       rs.on('error', reject)
     })
+
+    // Helper: dispatch a batch and wait for it to finish (sequentially)
+    async function dispatchBatchAndWait(batch, workers, idle, opts) {
+      return new Promise((resolve) => {
+        function tryDispatch() {
+          if (idle.length === 0) {
+            setTimeout(tryDispatch, 50)
+            return
+          }
+          const workerIndex = idle.shift()
+          const w = workers[workerIndex]
+          console.log(`[Processor] Dispatching batch of ${batch.length} jobs to worker #${workerIndex}`)
+          w.once('message', (msg) => {
+            if (msg.type === 'batch_done') {
+              console.log(`[Processor] Worker #${workerIndex} finished batch of ${batch.length} jobs`)
+              idle.push(workerIndex)
+              resolve()
+            }
+          })
+          w.postMessage({ jobs: batch, options: opts })
+        }
+        tryDispatch()
+      })
+    }
   })().catch(err => {
     if (progressCb) progressCb({ type: 'error', error: err.message })
   })

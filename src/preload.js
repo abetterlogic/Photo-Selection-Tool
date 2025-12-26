@@ -10,4 +10,6 @@ contextBridge.exposeInMainWorld('dslrAPI', {
   onProcessProgress: (cb) => {
     ipcRenderer.on('process-progress', (event, data) => cb(data))
   }
+  ,
+  openExternal: (url) => ipcRenderer.invoke('open-external', url)
 })

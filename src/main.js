@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const fsp = fs.promises
@@ -14,10 +14,53 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // disable DevTools in packaged (production) builds
+      devTools: !app.isPackaged
     }
   })
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'))
+  
+  // Create menu: include dev tools only when not packaged (development)
+  const template = [
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'Documentation',
+          click: () => {
+            shell.openExternal('https://e.dslr.app/helplink/selfie-search-sorting')
+          }
+        }
+      ]
+    }
+  ]
+
+  if (!app.isPackaged) {
+    // In development allow reload/devtools
+    template.unshift({
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forcereload' },
+        { type: 'separator' },
+        { role: 'toggledevtools' }
+      ]
+    })
+  }
+
+  const menu = Menu.buildFromTemplate(template)
+  Menu.setApplicationMenu(menu)
+
+  // In packaged builds, hide the menu bar on Windows/Linux to avoid exposing dev shortcuts
+  if (app.isPackaged) {
+    try {
+      mainWindow.setMenuBarVisibility(false)
+      mainWindow.setAutoHideMenuBar(true)
+    } catch (e) {
+      // ignore if API not available in some Electron versions/platforms
+    }
+  }
 }
 
 app.whenReady().then(createWindow)
@@ -86,6 +129,16 @@ ipcMain.handle('process-selection', async (_, payload) => {
     return { success: true }
   } catch (err) {
     console.error('[Main] process-selection error:', err)
+    return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('open-external', async (_, url) => {
+  try {
+    // Open URL in the user's default browser
+    await shell.openExternal(url)
+    return { success: true }
+  } catch (err) {
     return { success: false, error: err.message }
   }
 })

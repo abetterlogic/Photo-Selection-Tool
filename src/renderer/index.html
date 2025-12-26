@@ -10,8 +10,16 @@
   <body>
     <div class="container">
       <div class="header">
-        <h1>📷 DSLR Photo Copier Tool</h1>
-        <p class="subtitle">Efficiently copy selected photos from mapped folders</p>
+        <div class="header-left">
+          <img src="./assets/icon.png" class="app-icon" alt="App icon">
+          <div>
+            <h1 id="appTitle">DSLR Photo Copier Tool</h1>
+            <p class="subtitle">Efficiently copy selected photos from mapped folders</p>
+          </div>
+        </div>
+        <div class="header-right">
+          <button id="btnHowTo" class="btn btn-secondary">💡 How To</button>
+        </div>
       </div>
       
       <div class="card">
@@ -45,6 +53,8 @@
           </div>
         </div>
       </div>
+
+      
 
       <div id="summary" class="summary-box">Ready to scan.</div>
       <progress id="progress" value="0" max="100" class="progress-bar"></progress>

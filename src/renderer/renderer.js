@@ -5,6 +5,8 @@ const mappingDiv = document.getElementById('mapping')
 const summary = document.getElementById('summary')
 const progress = document.getElementById('progress')
 const chkRaw = document.getElementById('chkRaw')
+const appTitle = document.getElementById('appTitle')
+const btnHowTo = document.getElementById('btnHowTo')
 
 let csvPath = null
 let folderMap = {}
@@ -62,6 +64,29 @@ btnCopyPhotos.addEventListener('click', () => {
   if (!destFolder) return alert('Please select a destination folder first')
   startProcessing('copy')
 })
+
+if (appTitle) {
+  appTitle.style.cursor = 'pointer'
+  appTitle.addEventListener('click', async () => {
+    const url = 'https://www.dslr.app'
+    try {
+      await window.dslrAPI.openExternal(url)
+    } catch (e) {
+      window.open(url, '_blank')
+    }
+  })
+}
+
+if (btnHowTo) {
+  const HELP_URL = 'https://e.dslr.app/helplink/selfie-search-sorting'
+  btnHowTo.addEventListener('click', async () => {
+    try {
+      await window.dslrAPI.openExternal(HELP_URL)
+    } catch (e) {
+      window.open(HELP_URL, '_blank')
+    }
+  })
+}
 
 function renderFolderMapping(folders) {
   mappingDiv.innerHTML = ''

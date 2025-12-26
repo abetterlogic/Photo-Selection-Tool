@@ -68,9 +68,21 @@ function streamCopy(src, dest) {
 
 parentPort.on('message', async (msg) => {
   const jobs = msg.jobs || []
-  for (const job of jobs) {
-    await processJob(job)
+  console.log(`[Worker] Received batch of ${jobs.length} jobs`)
+  try {
+    for (const [i, job] of jobs.entries()) {
+      try {
+        console.log(`[Worker] Processing job ${i+1}/${jobs.length}: ${job.imageName}`)
+        await processJob(job)
+      } catch (err) {
+        parentPort.postMessage({ type: 'error', error: err && err.message ? err.message : String(err) })
+      }
+    }
+  } catch (err) {
+    parentPort.postMessage({ type: 'error', error: 'Batch handler error: ' + (err && err.message ? err.message : String(err)) })
+  } finally {
+    console.log(`[Worker] Finished batch of ${jobs.length} jobs, sending batch_done`)
+    // Always signal finished batch, even if errors
+    parentPort.postMessage({ type: 'batch_done', processed: jobs.length })
   }
-  // signal finished batch
-  parentPort.postMessage({ type: 'batch_done', processed: jobs.length })
 })
