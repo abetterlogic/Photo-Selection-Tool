@@ -1,9 +1,9 @@
 {
-  "name": "dslr-photo-copier-tool",
-  "productName": "DSLR Photo Copier Tool",
-  "version": "0.1.0",
+  "name": "dslr-batch-photo-copier",
+  "productName": "Batch Photo Copier Tool",
+  "version": "0.1.1",
   "packageManager": "pnpm@8",
-  "description": "Electron starter app to copy photos from DSLR memory cards",
+  "description": "App for Photographer Crm, that copies customer selected photos.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
@@ -11,8 +11,12 @@
     "build": "electron-builder --win --mac --linux --publish never",
     "build:all": "electron-builder --win --mac --linux"
   },
-  "keywords": ["electron","dslr","photos","copy"],
+  "keywords": ["Photographer Crm","dslr","photos","copy"],
   "author": "",
+    "author": {
+      "name": "Nishant Pandey",
+      "email": "info@dslr.app"
+    },
   "license": "MIT",
   "devDependencies": {
     "electron": "^26.0.0",
@@ -23,8 +27,8 @@
     "csv-parse": "^5.3.6"
   },
   "build": {
-    "appId": "com.dslr-photo-copier.app",
-    "productName": "DSLR Photo Copier Tool",
+    "appId": "batchphotocopier.dslr.app",
+    "productName": "Batch Photo Copier Tool",
     "directories": {
       "buildResources": "assets"
     },

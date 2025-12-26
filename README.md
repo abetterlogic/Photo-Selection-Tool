@@ -1,6 +1,9 @@
+
 # 📷 DSLR Photo Copier Tool
 
+
 A powerful Electron-based desktop application that efficiently copies DSLR photos from multiple source folders based on CSV mappings. Perfect for photographers managing large photo libraries across multiple cameras and folders.
+
 
 ## Features
 
@@ -8,10 +11,11 @@ A powerful Electron-based desktop application that efficiently copies DSLR photo
 - **Per-Folder Scanning**: Individually scan and verify photos before copying
 - **RAW File Support**: Optionally include RAW variants (CR2, NEF, ARW, DNG, etc.) alongside standard formats
 - **Collision Handling**: Smart prompts for file overwrite decisions (Overwrite/Skip/Overwrite All/Skip All)
-- **Sequential Copying**: Copy photos one-by-one with live progress tracking
+- **Sequential Copying**: Copy photos one-by-one with live progress tracking (no batching, every file in your CSV is processed in order)
 - **Dark Mode UI**: Modern, flat design with responsive layout
 - **Cross-Platform**: Builds for Windows, macOS, and Linux
 - **Developer-Friendly**: Context isolation, secure IPC, no DevTools in production
+
 
 ## Installation
 
@@ -37,6 +41,7 @@ pnpm build
 # Build for all platforms (may require cross-compilation)
 pnpm build:all
 ```
+
 
 ## How to Use
 
@@ -84,6 +89,7 @@ For each folder in your CSV:
 
 When "Include RAW files" is enabled, the app searches for RAW variants in the source folder and includes them in the copy operation.
 
+
 ## Building & Packaging
 
 ### Prerequisites
@@ -115,6 +121,7 @@ pnpm build
 pnpm build:all
 ```
 
+
 ## Architecture
 
 - **Main Process** (`src/main.js`): Electron app window, menu, and IPC handlers
@@ -130,12 +137,14 @@ pnpm build:all
 - **No DevTools**: DevTools disabled in production builds
 - **Content Security Policy**: Restricts script execution to safe sources
 
+
 ## Development Notes
 
 - CSV parsing uses `csv-parse` with streaming for efficient large-file handling
 - Photo copying uses Node.js `worker_threads` for non-blocking I/O
 - UI updates via IPC progress callbacks for real-time feedback
 - Collision prompts are synchronous during copy-only operations
+
 
 ## Troubleshooting
 
@@ -145,10 +154,14 @@ pnpm build:all
 
 **Build fails**: Check that you have the required platform build tools installed (Windows: Visual Studio Build Tools, macOS: Xcode Command Line Tools)
 
+
 ## License
 
 See LICENSE file for details.
 
-## Support
 
-For help using the tool, click the **💡 How To** button in the app header or visit the documentation site.
+## Author & Support
+
+- **Author:** Nishant Pandey (<info@dslr.app>)
+- For help using the tool, click the **💡 How To** button in the app header or visit the documentation site.
+- For direct support, email: info@dslr.app
