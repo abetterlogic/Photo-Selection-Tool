@@ -45,6 +45,8 @@ ipcMain.handle('select-csv', async () => {
 ipcMain.handle('parse-csv-folders', async (_, csvPath) => {
   try {
     const unique = new Set()
+    const folderCounts = {}
+    let totalRows = 0
     await new Promise((resolve, reject) => {
       const rs = fs.createReadStream(csvPath)
       const parser = parse({ columns: true, relax_quotes: true, skip_empty_lines: true })
@@ -52,15 +54,19 @@ ipcMain.handle('parse-csv-folders', async (_, csvPath) => {
       parser.on('readable', () => {
         let record
         while ((record = parser.read())) {
+          totalRows++
           const name = record.FolderName || record.folder_name || record.folderName || record.Folder || ''
-          if (name) unique.add(name)
+          if (name) {
+            unique.add(name)
+            folderCounts[name] = (folderCounts[name] || 0) + 1
+          }
         }
       })
       parser.on('end', resolve)
       parser.on('error', reject)
       rs.on('error', reject)
     })
-    return { success: true, folders: Array.from(unique) }
+    return { success: true, folders: Array.from(unique), totalRows, folderCounts }
   } catch (err) {
     return { success: false, error: err.message }
   }

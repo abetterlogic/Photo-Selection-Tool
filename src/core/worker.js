@@ -26,8 +26,12 @@ async function processJob(job) {
   }
 
   let finalDest = dest
-  if (job.options.collision === 'rename') {
-    finalDest = await makeDestUnique(dest)
+  if (!job.overwrite) {
+    if (job.options.collision === 'rename') {
+      finalDest = await makeDestUnique(dest)
+    }
+  } else {
+    finalDest = dest
   }
 
   try {

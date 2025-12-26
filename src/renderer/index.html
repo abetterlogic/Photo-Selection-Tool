@@ -20,8 +20,9 @@
           <div class="input-row">
             <label>CSV File:</label>
             <input type="text" id="csvPath" placeholder="No file selected" readonly class="input-readonly">
-            <button id="btnCsv" class="btn btn-primary">Upload CSV</button>
+              <button id="btnCsv" class="btn btn-primary">Upload CSV</button>
           </div>
+            <div id="csvInfo" class="input-info" aria-live="polite"></div>
         </div>
       </div>
 
@@ -36,8 +37,11 @@
           <div class="input-row">
             <label>Destination Folder:</label>
             <input type="text" id="destFolder" placeholder="No folder selected" readonly class="input-readonly">
-            <button id="btnDestFolder" class="btn btn-secondary">Choose</button>
-            <button id="btnCopyPhotos" class="btn btn-success">Copy Photos</button>
+              <button id="btnDestFolder" class="btn btn-secondary">Choose</button>
+              <label style="display:flex; align-items:center; gap:8px; margin-left:12px;">
+                <input type="checkbox" id="chkRaw"> <span style="font-size:13px; color:#bfbfbf">Include RAW files</span>
+              </label>
+              <button id="btnCopyPhotos" class="btn btn-success">Copy Photos</button>
           </div>
         </div>
       </div>

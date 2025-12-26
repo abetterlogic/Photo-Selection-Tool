@@ -4,6 +4,7 @@ const path = require('path')
 const os = require('os')
 const { parse } = require('csv-parse')
 const { Worker } = require('worker_threads')
+const { dialog } = require('electron')
 
 function sanitizeName(name) {
   return name.replace(/[<>:"/\\|?*]+/g, '_')
@@ -13,7 +14,7 @@ function defaultOptions() {
   return {
     includeRaw: false,
     mode: 'copy',
-    collision: 'rename',
+    collision: 'prompt',
     batchSize: 200,
     maxWorkers: Math.max(1, os.cpus().length - 1)
   }
@@ -22,6 +23,8 @@ function defaultOptions() {
 function processSelection(payload, progressCb) {
   console.log('[Processor] processSelection called', { csvPath: payload.csvPath, mode: payload.options?.mode })
   const opts = Object.assign(defaultOptions(), payload.options || {})
+  // enforce sequential copying (one by one) when in copy mode
+  if (opts.mode === 'copy') opts.maxWorkers = 1
   const csvPath = payload.csvPath
   const destFolder = payload.destFolder
   const folderMap = payload.folderMap || {}
@@ -97,7 +100,8 @@ function processSelection(payload, progressCb) {
           const fn = msg.folderName || 'unknown'
           perFolder[fn] = perFolder[fn] || { matched: [], missing: [], copied: 0, failed: 0 }
           perFolder[fn].copied += 1
-          if (progressCb) progressCb({ type: 'progress', completed, failed, totalJobs, perFolder })
+          // include current file info in progress callback
+          if (progressCb) progressCb({ type: 'progress', completed, failed, totalJobs, perFolder, currentFile: msg.file, imageName: msg.imageName, folderName: fn })
         } else if (msg.type === 'error') {
           failed++
           const fn = msg.folderName || 'unknown'
@@ -150,7 +154,7 @@ function processSelection(payload, progressCb) {
           const imageName = rec.fileName || rec.file_name || rec.file || rec.fileName || ''
           if (!folderName || !imageName) continue
           // only create jobs for folders the user has mapped
-          if (!folderMap[folderName]) {
+              if (!folderMap[folderName]) {
             skippedRows++
             continue
           }
@@ -160,6 +164,8 @@ function processSelection(payload, progressCb) {
 
           const srcDir = folderMap[folderName]
           const destDir = getOutputDir(folderName)
+
+
 
           if (opts.mode === 'scan') {
             // in scan mode, perform async existence check and record
@@ -177,7 +183,78 @@ function processSelection(payload, progressCb) {
             })()
             pendingScans.push(p)
           } else {
-            batch.push({ folderName, imageName, srcDir, destDir, options: opts })
+              // prepare list of filenames to copy: include RAW variants if requested
+              const rawExts = ['.cr2', '.nef', '.arw', '.rw2', '.dng', '.raw', '.raf']
+              const baseName = path.parse(imageName).name
+              const namesToCopy = [imageName]
+              if (opts.includeRaw) {
+                for (const re of rawExts) {
+                  const cand = baseName + re
+                  try {
+                    if (fs.existsSync(path.join(srcDir, cand))) namesToCopy.push(cand)
+                  } catch (e) {}
+                }
+              }
+
+              // ensure prompt state fields
+              if (typeof opts._overwriteAll === 'undefined') opts._overwriteAll = false
+              if (typeof opts._skipAll === 'undefined') opts._skipAll = false
+
+              // For each candidate name, handle existing dest collisions (synchronously)
+              for (const nameToCopy of namesToCopy) {
+                try {
+                  const destPath = path.join(destDir, nameToCopy)
+                  const existsSync = fs.existsSync(destPath)
+                  if (existsSync && opts.collision === 'prompt') {
+                    if (opts._skipAll) {
+                      skippedRows++
+                      continue
+                    }
+                    if (!opts._overwriteAll) {
+                      const choice = dialog.showMessageBoxSync({
+                        type: 'question',
+                        buttons: ['Overwrite','Skip','Overwrite All','Skip All','Cancel'],
+                        defaultId: 0,
+                        cancelId: 4,
+                        title: 'File exists',
+                        message: `File already exists in destination:\n${destPath}\nWhat would you like to do?`,
+                        noLink: true
+                      })
+                      if (choice === 4) {
+                        if (progressCb) progressCb({ type: 'error', error: 'Operation cancelled by user' })
+                        throw new Error('Operation cancelled by user')
+                      } else if (choice === 1) {
+                        skippedRows++
+                        continue
+                      } else if (choice === 2) {
+                        opts._overwriteAll = true
+                        batch.push({ folderName, imageName: nameToCopy, srcDir, destDir, options: opts, overwrite: true })
+                        if (batch.length >= opts.batchSize) { const b = batch; batch = []; dispatchBatch(b) }
+                        continue
+                      } else if (choice === 3) {
+                        opts._skipAll = true
+                        skippedRows++
+                        continue
+                      } else if (choice === 0) {
+                        batch.push({ folderName, imageName: nameToCopy, srcDir, destDir, options: opts, overwrite: true })
+                        if (batch.length >= opts.batchSize) { const b = batch; batch = []; dispatchBatch(b) }
+                        continue
+                      }
+                    } else {
+                      // overwriteAll true
+                      batch.push({ folderName, imageName: nameToCopy, srcDir, destDir, options: opts, overwrite: true })
+                      if (batch.length >= opts.batchSize) { const b = batch; batch = []; dispatchBatch(b) }
+                      continue
+                    }
+                  }
+                  // no existing dest or collision not prompt => queue normally
+                  batch.push({ folderName, imageName: nameToCopy, srcDir, destDir, options: opts })
+                  if (batch.length >= opts.batchSize) { const b = batch; batch = []; dispatchBatch(b) }
+                } catch (err) {
+                  if (progressCb) progressCb({ type: 'error', error: err.message })
+                  throw err
+                }
+              }
             if (batch.length >= opts.batchSize) {
               const b = batch
               batch = []

@@ -1,19 +1,33 @@
 const btnCsv = document.getElementById('btnCsv')
 const csvPathEl = document.getElementById('csvPath')
+const csvInfoEl = document.getElementById('csvInfo')
 const mappingDiv = document.getElementById('mapping')
 const summary = document.getElementById('summary')
 const progress = document.getElementById('progress')
+const chkRaw = document.getElementById('chkRaw')
 
 let csvPath = null
 let folderMap = {}
 let uniqueFolders = []
 let destFolder = null
+let csvFolderCounts = {}
+let currentMode = null
 
 btnCsv.addEventListener('click', async () => {
   const sel = await window.dslrAPI.selectCSV()
   if (!sel) return
   csvPath = sel
-  csvPathEl.textContent = sel
+  // set the input value and show filename + full path below the input
+  try {
+    csvPathEl.value = sel
+  } catch (e) {
+    // fallback for non-input elements
+    csvPathEl.textContent = sel
+  }
+    const parts = sel.split(/[\\/]/)
+  const filename = parts[parts.length - 1]
+  // show filename immediately while parsing
+  if (csvInfoEl) csvInfoEl.textContent = filename + ' — ' + sel
   summary.textContent = 'Parsing CSV for folders...'
   const res = await window.dslrAPI.parseCsvFolders(sel)
   if (!res.success) {
@@ -21,6 +35,13 @@ btnCsv.addEventListener('click', async () => {
     return
   }
   uniqueFolders = res.folders
+  csvFolderCounts = res.folderCounts || {}
+  // if parser returned totals, display them
+  if (csvInfoEl) {
+    const total = res.totalRows || 0
+    const folders = Array.isArray(res.folders) ? res.folders.length : Object.keys(res.folderCounts || {}).length
+    csvInfoEl.textContent = `${filename} — ${total} photos across ${folders} folders`
+  }
   renderFolderMapping(uniqueFolders)
   summary.textContent = `Found ${uniqueFolders.length} folders in CSV`
 })
@@ -60,6 +81,7 @@ function renderFolderMapping(folders) {
     input.style.flex = '2'
     const btn = document.createElement('button')
     btn.textContent = 'Choose'
+    btn.className = 'btn btn-secondary btn-small'
     btn.addEventListener('click', async () => {
       const d = await window.dslrAPI.selectDirectory()
       if (d) {
@@ -69,12 +91,17 @@ function renderFolderMapping(folders) {
     })
     const scanBtn = document.createElement('button')
     scanBtn.textContent = 'Scan'
-    scanBtn.style.marginLeft = '8px'
+    scanBtn.className = 'btn btn-primary btn-small'
     scanBtn.addEventListener('click', () => scanSingleFolder(f, input.value))
+
+    const actions = document.createElement('div')
+    actions.className = 'map-actions'
+    actions.appendChild(btn)
+    actions.appendChild(scanBtn)
+
     row.appendChild(label)
     row.appendChild(input)
-    row.appendChild(btn)
-    row.appendChild(scanBtn)
+    row.appendChild(actions)
     mappingDiv.appendChild(row)
     folderRows[f] = row
     
@@ -94,6 +121,7 @@ function renderFolderMapping(folders) {
 
 async function startProcessing(mode) {
   console.log('startProcessing called with mode:', mode)
+  currentMode = mode
   const mappedCount = Object.keys(folderMap).length
   console.log('Mapped folders:', mappedCount, folderMap)
   if (mappedCount === 0) return alert('Please map at least one folder to proceed')
@@ -104,6 +132,7 @@ async function startProcessing(mode) {
   console.log('Starting process with destFolder:', destFolder)
   summary.textContent = (mode === 'scan') ? 'Scanning...' : 'Copying...'
   progress.value = 0
+  progress.max = 0
   
   // Clear previous report
   const existingReport = document.getElementById('per-folder-report')
@@ -118,7 +147,8 @@ async function startProcessing(mode) {
   mappingDiv.appendChild(loader)
   
   try {
-    const result = await window.dslrAPI.processSelection({ csvPath, destFolder, folderMap, options: { includeRaw: false, mode } })
+    const includeRaw = chkRaw ? !!chkRaw.checked : false
+    const result = await window.dslrAPI.processSelection({ csvPath, destFolder, folderMap, options: { includeRaw, mode } })
     console.log('processSelection result:', result)
   } catch (err) {
     console.error('processSelection error:', err)
@@ -131,6 +161,7 @@ async function scanSingleFolder(folderName, srcPath) {
   if (!csvPath) return alert('Please select a CSV file first')
   
   console.log('Scanning single folder:', folderName, 'at', srcPath)
+  currentMode = 'scan'
   summary.textContent = 'Scanning: ' + folderName + '...'
   
   // Clear previous report
@@ -158,7 +189,18 @@ async function scanSingleFolder(folderName, srcPath) {
 
 window.dslrAPI.onProcessProgress((data) => {
   if (data.type === 'progress') {
-    summary.textContent = `Processing: ${data.totalJobs || 0} files scanned`
+    // copy mode: show X/Y and current file
+    if (currentMode === 'copy') {
+      const total = data.totalJobs || 0
+      const done = data.completed || 0
+      progress.max = total || 1
+      progress.value = done
+      const file = data.currentFile || data.imageName || ''
+      const short = file ? file.split(/[\\/]/).pop() : ''
+      summary.textContent = `Copying: ${done}/${total}` + (short ? ` — ${short}` : '')
+    } else {
+      summary.textContent = `Processing: ${data.totalJobs || 0} files scanned`
+    }
     renderPerFolder(data.perFolder)
     // remove loading spinner on first progress
     const loader = document.getElementById('loading-spinner')
@@ -169,17 +211,23 @@ window.dslrAPI.onProcessProgress((data) => {
     const loader = document.getElementById('loading-spinner')
     if (loader) loader.remove()
   } else if (data.type === 'done') {
-    summary.textContent = `✓ Done. Scanned ${data.totalJobs || 0} files`
+    // finished
     renderPerFolder(data.perFolder)
     const loader = document.getElementById('loading-spinner')
     if (loader) loader.remove()
-    if (data.skipped) {
-      const note = document.createElement('div')
-      note.style.marginTop = '8px'
-      note.style.fontSize = '0.9em'
-      note.style.color = '#666'
-      note.textContent = `Skipped rows (unmapped folders): ${data.skipped}`
-      mappingDiv.appendChild(note)
+    if (currentMode === 'copy') {
+      const totalCopied = data.completed || Object.values(data.perFolder || {}).reduce((s, v) => s + (v.copied || 0), 0)
+      // build folder summary
+      const parts = []
+      for (const k of Object.keys(data.perFolder || {})) {
+        const v = data.perFolder[k]
+        parts.push(`${k}: ${v.copied || 0}`)
+      }
+      const details = parts.join(', ')
+      summary.textContent = `✓ Done. Copied ${totalCopied} files.` + (details ? ` ${details}` : '')
+      progress.value = progress.max || progress.value
+    } else {
+      summary.textContent = `✓ Done. Scanned ${data.totalJobs || 0} files`
     }
   }
 })
@@ -201,7 +249,17 @@ function renderPerFolder(perFolder) {
     
     const matched = Array.isArray(v.matched) ? v.matched.length : v.matched || 0
     const missing = Array.isArray(v.missing) ? v.missing.length : v.missing || 0
-    
+
+    // show total photos from the original CSV (if available)
+    const totalCsv = csvFolderCounts && csvFolderCounts[folderName] ? csvFolderCounts[folderName] : null
+    if (totalCsv !== null) {
+      const totalSpan = document.createElement('span')
+      totalSpan.style.color = '#bfbfbf'
+      totalSpan.style.marginRight = '12px'
+      totalSpan.textContent = `Total (CSV): ${totalCsv}`
+      resultRow.appendChild(totalSpan)
+    }
+
     const matchedSpan = document.createElement('span')
     matchedSpan.style.cursor = 'pointer'
     matchedSpan.style.textDecoration = 'underline'
