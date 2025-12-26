@@ -202,63 +202,55 @@ function processSelection(payload, progressCb) {
         console.log(`[Processor] Total jobs found in CSV after filtering: ${totalJobs}`)
         if (progressCb) progressCb({ type: 'progress', totalJobs, perFolder })
 
-        // Process jobs in batches of opts.batchSize
-        let dispatchedJobs = 0
+        // Process jobs one by one, no batching
         let cancelled = false
-        for (let i = 0; i < allJobs.length && !cancelled; i += opts.batchSize) {
-          const batchJobs = allJobs.slice(i, i + opts.batchSize)
-          const batch = []
-          for (const job of batchJobs) {
-            // handle collision prompt logic synchronously per job
-            const destPath = path.join(job.destDir, job.imageName)
-            let overwrite = false
-            if (fs.existsSync(destPath) && opts.collision === 'prompt') {
-              if (opts._skipAll) {
+        for (const job of allJobs) {
+          // handle collision prompt logic synchronously per job
+          const destPath = path.join(job.destDir, job.imageName)
+          let overwrite = false
+          if (fs.existsSync(destPath) && opts.collision === 'prompt') {
+            if (opts._skipAll) {
+              skippedRows++
+              continue
+            }
+            if (!opts._overwriteAll) {
+              const choice = dialog.showMessageBoxSync({
+                type: 'question',
+                buttons: ['Overwrite','Skip','Overwrite All','Skip All','Cancel'],
+                defaultId: 0,
+                cancelId: 4,
+                title: 'File exists',
+                message: `File already exists in destination:\n${destPath}\nWhat would you like to do?`,
+                noLink: true
+              })
+              if (choice === 4) {
+                if (progressCb) progressCb({ type: 'error', error: 'Operation cancelled by user' })
+                cancelled = true
+                break
+              } else if (choice === 1) {
                 skippedRows++
                 continue
-              }
-              if (!opts._overwriteAll) {
-                const choice = dialog.showMessageBoxSync({
-                  type: 'question',
-                  buttons: ['Overwrite','Skip','Overwrite All','Skip All','Cancel'],
-                  defaultId: 0,
-                  cancelId: 4,
-                  title: 'File exists',
-                  message: `File already exists in destination:\n${destPath}\nWhat would you like to do?`,
-                  noLink: true
-                })
-                if (choice === 4) {
-                  if (progressCb) progressCb({ type: 'error', error: 'Operation cancelled by user' })
-                  cancelled = true
-                  break
-                } else if (choice === 1) {
-                  skippedRows++
-                  continue
-                } else if (choice === 2) {
-                  opts._overwriteAll = true
-                  overwrite = true
-                } else if (choice === 3) {
-                  opts._skipAll = true
-                  skippedRows++
-                  continue
-                } else if (choice === 0) {
-                  overwrite = true
-                }
-              } else {
+              } else if (choice === 2) {
+                opts._overwriteAll = true
+                overwrite = true
+              } else if (choice === 3) {
+                opts._skipAll = true
+                skippedRows++
+                continue
+              } else if (choice === 0) {
                 overwrite = true
               }
+            } else {
+              overwrite = true
             }
-            batch.push({ ...job, overwrite })
           }
-          if (cancelled) break;
-          if (batch.length > 0) {
-            dispatchedJobs += batch.length
-            console.log(`[Processor] Dispatching batch of ${batch.length} jobs (dispatched so far: ${dispatchedJobs})`)
-            await dispatchBatchAndWait(batch, workers, idle, opts)
-          }
+          // Dispatch this job to the worker and wait for completion
+          const singleJob = [{ ...job, overwrite }]
+          await dispatchBatchAndWait(singleJob, workers, idle, opts)
         }
-        console.log(`[Processor] All jobs dispatched. Total dispatched: ${dispatchedJobs}`)
+        console.log(`[Processor] All jobs dispatched. Total dispatched: ${cancelled ? 'cancelled early' : allJobs.length}`)
         if (cancelled) {
+          console.log('[Processor] Loop exited due to user cancellation.')
           resolve()
           return
         }
@@ -296,13 +288,16 @@ function processSelection(payload, progressCb) {
           const workerIndex = idle.shift()
           const w = workers[workerIndex]
           console.log(`[Processor] Dispatching batch of ${batch.length} jobs to worker #${workerIndex}`)
-          w.once('message', (msg) => {
+          // Only listen for batch_done for this job
+          const batchDoneHandler = (msg) => {
             if (msg.type === 'batch_done') {
               console.log(`[Processor] Worker #${workerIndex} finished batch of ${batch.length} jobs`)
               idle.push(workerIndex)
+              w.removeListener('message', batchDoneHandler)
               resolve()
             }
-          })
+          }
+          w.on('message', batchDoneHandler)
           w.postMessage({ jobs: batch, options: opts })
         }
         tryDispatch()
