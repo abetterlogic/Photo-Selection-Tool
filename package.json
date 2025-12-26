@@ -1,8 +1,8 @@
 {
   "name": "dslr-batch-photo-copier",
   "productName": "Batch Photo Copier Tool",
-  "version": "0.1.1",
-  "packageManager": "pnpm@8",
+  "version": "0.1.2",
+  "packageManager": "pnpm",
   "description": "App for Photographer Crm, that copies customer selected photos.",
   "main": "src/main.js",
   "scripts": {

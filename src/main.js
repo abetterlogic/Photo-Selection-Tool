@@ -22,7 +22,14 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'))
   
   // Create menu: include dev tools only when not packaged (development)
+
   const template = [
+    {
+      label: 'File',
+      submenu: [
+        { role: 'quit' }
+      ]
+    },
     {
       label: 'Help',
       submenu: [
@@ -30,6 +37,18 @@ function createWindow() {
           label: 'Documentation',
           click: () => {
             shell.openExternal('https://e.dslr.app/helplink/selfie-search-sorting')
+          }
+        },
+        {
+          label: 'About',
+          click: () => {
+            dialog.showMessageBox({
+              type: 'info',
+              title: 'About DSLR Photo Copier Tool',
+              message: 'DSLR Photo Copier Tool\nVersion 0.1.1\n\nAuthor: Nishant Pandey\nEmail: info@dslr.app',
+              detail: 'A cross-platform tool for photographers to batch copy photos using CSV mapping.\nhttps://dslr.app',
+              buttons: ['OK']
+            })
           }
         }
       ]
